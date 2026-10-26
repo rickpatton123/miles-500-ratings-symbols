@@ -1,0 +1,40 @@
+name: Generate PNG rating dots
+on:
+  push:
+    paths:
+      - '.github/workflows/generate-dots.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate transparent PNG files
+        run: |
+          python3 - <<'PY'
+          import os, struct, zlib
+          os.makedirs('symbols',exist_ok=True)
+          colors={'black':(17,17,17),'green':(16,168,74),'yellow':(244,209,43),'red':(229,43,49)}
+          def chunk(tag,data):
+              return struct.pack('!I',len(data))+tag+data+struct.pack('!I',zlib.crc32(tag+data)&0xffffffff)
+          for name in (*colors,'green-yellow'):
+              rows=[]
+              for y in range(96):
+                  row=bytearray([0])
+                  for x in range(96):
+                      inside=(x-47.5)**2+(y-47.5)**2<=43**2
+                      color=colors['green' if x<48 else 'yellow'] if name=='green-yellow' else colors[name]
+                      row.extend((*color,255 if inside else 0))
+                  rows.append(bytes(row))
+              raw=b''.join(rows)
+              png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!2I5B',96,96,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b'')
+              with open('symbols/'+name+'.png','wb') as f:f.write(png)
+          PY
+      - name: Commit generated PNGs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add symbols/*.png
+          git diff --cached --quiet || (git commit -m "Generate permanent PNG rating dots" && git push)
